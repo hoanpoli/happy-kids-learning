@@ -22,6 +22,7 @@ import { CelebrationModal } from './components/CelebrationModal.tsx';
 import { StickerAlbumModal } from './components/StickerAlbumModal.tsx';
 import { SafetyInfoModal } from './components/SafetyInfoModal.tsx';
 import { AudioSettingsModal } from './components/AudioSettingsModal.tsx';
+import { InstallAppModal } from './components/InstallAppModal.tsx';
 import { SoundFX } from './utils/audio.ts';
 
 const LOCAL_STORAGE_KEY = 'be_vui_hoc_progress_v2';
@@ -79,6 +80,7 @@ export default function App() {
   const [isStickerAlbumOpen, setIsStickerAlbumOpen] = useState(false);
   const [isSafetyInfoOpen, setIsSafetyInfoOpen] = useState(false);
   const [isAudioSettingsOpen, setIsAudioSettingsOpen] = useState(false);
+  const [isInstallAppOpen, setIsInstallAppOpen] = useState(false);
 
   // Compute smart recommendation based on toddler's historical progress
   const recommendation = useMemo(() => {
@@ -229,6 +231,7 @@ export default function App() {
           onOpenStickerAlbum={() => setIsStickerAlbumOpen(true)}
           onOpenSafetyInfo={() => setIsSafetyInfoOpen(true)}
           onOpenAudioSettings={() => setIsAudioSettingsOpen(true)}
+          onOpenInstallApp={() => setIsInstallAppOpen(true)}
           progress={progress}
           recommendation={recommendation}
         />
@@ -281,6 +284,12 @@ export default function App() {
       <AudioSettingsModal
         isOpen={isAudioSettingsOpen}
         onClose={() => setIsAudioSettingsOpen(false)}
+      />
+
+      {/* Install App to Phone & APK Modal */}
+      <InstallAppModal
+        isOpen={isInstallAppOpen}
+        onClose={() => setIsInstallAppOpen(false)}
       />
     </div>
   );

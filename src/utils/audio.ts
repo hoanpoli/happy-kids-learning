@@ -230,46 +230,99 @@ function findVoice(langPrefix: string): SpeechSynthesisVoice | null {
   return generic || null;
 }
 
+// Active speech session tracker & timeout management
+let currentSpeechSessionId = 0;
+const activeSpeechTimeouts = new Set<ReturnType<typeof setTimeout>>();
+
+function clearAllSpeechTimeouts() {
+  activeSpeechTimeouts.forEach((t) => clearTimeout(t));
+  activeSpeechTimeouts.clear();
+}
+
+function safeSpeechTimeout(fn: () => void, delay: number, sessionId: number): ReturnType<typeof setTimeout> {
+  const timer = setTimeout(() => {
+    activeSpeechTimeouts.delete(timer);
+    if (sessionId === currentSpeechSessionId) {
+      fn();
+    }
+  }, delay);
+  activeSpeechTimeouts.add(timer);
+  return timer;
+}
+
 export function stopSpeaking() {
+  currentSpeechSessionId++;
+  clearAllSpeechTimeouts();
+
   if (currentPlayingAudio) {
     try {
+      currentPlayingAudio.onended = null;
+      currentPlayingAudio.onerror = null;
       currentPlayingAudio.pause();
       currentPlayingAudio.currentTime = 0;
+      currentPlayingAudio.src = '';
     } catch {
       // ignore
     }
     currentPlayingAudio = null;
   }
   if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-    window.speechSynthesis.cancel();
+    try {
+      window.speechSynthesis.cancel();
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      }
+    } catch {
+      // ignore
+    }
   }
 }
 
-// Play audio via HTML5 Audio element
-function playAudioSource(src: string, onEnd?: () => void): boolean {
+// Play audio via HTML5 Audio element with session tracking
+function playAudioSource(src: string, sessionId: number, onEnd?: () => void): boolean {
+  if (sessionId !== currentSpeechSessionId) return false;
+
   try {
-    stopSpeaking();
+    if (currentPlayingAudio) {
+      currentPlayingAudio.onended = null;
+      currentPlayingAudio.onerror = null;
+      try {
+        currentPlayingAudio.pause();
+        currentPlayingAudio.src = '';
+      } catch {}
+      currentPlayingAudio = null;
+    }
+
     const audio = new Audio(src);
     currentPlayingAudio = audio;
 
     audio.onended = () => {
-      currentPlayingAudio = null;
-      onEnd?.();
+      if (sessionId === currentSpeechSessionId) {
+        currentPlayingAudio = null;
+        onEnd?.();
+      }
     };
 
     audio.onerror = () => {
-      currentPlayingAudio = null;
-      onEnd?.();
+      if (sessionId === currentSpeechSessionId) {
+        currentPlayingAudio = null;
+        onEnd?.();
+      }
     };
 
     audio.play().catch(() => {
-      currentPlayingAudio = null;
-      onEnd?.();
+      // If aborted or interrupted because of a new session, do NOT call onEnd
+      if (sessionId === currentSpeechSessionId) {
+        currentPlayingAudio = null;
+        onEnd?.();
+      }
     });
 
     return true;
   } catch {
-    onEnd?.();
+    if (sessionId === currentSpeechSessionId) {
+      onEnd?.();
+    }
     return false;
   }
 }
@@ -278,27 +331,37 @@ function playAudioSource(src: string, onEnd?: () => void): boolean {
 export async function speakSpeech(
   text: string,
   lang: 'vi' | 'en',
-  onEnd?: () => void
+  onEnd?: () => void,
+  existingSessionId?: number
 ): Promise<void> {
-  stopSpeaking();
   const clean = text.trim();
   if (!clean) {
     onEnd?.();
     return;
   }
 
+  let sessionId = existingSessionId;
+  if (sessionId === undefined) {
+    stopSpeaking();
+    sessionId = currentSpeechSessionId;
+  }
+
+  if (sessionId !== currentSpeechSessionId) return;
+
   // 1. Check custom uploaded/recorded audio first
   const customSrc = getCustomAudio(clean.toLowerCase());
   if (customSrc) {
-    playAudioSource(customSrc, onEnd);
+    if (sessionId !== currentSpeechSessionId) return;
+    playAudioSource(customSrc, sessionId, onEnd);
     return;
   }
 
   // 2. Check in-memory base64 cache
   const cacheKey = `${lang}:${clean.toLowerCase()}`;
   if (audioClipCache.has(cacheKey)) {
+    if (sessionId !== currentSpeechSessionId) return;
     const cachedUrl = audioClipCache.get(cacheKey)!;
-    playAudioSource(cachedUrl, onEnd);
+    playAudioSource(cachedUrl, sessionId, onEnd);
     return;
   }
 
@@ -314,13 +377,20 @@ export async function speakSpeech(
       })
     });
 
+    // Check if another speech request cancelled this in-flight request
+    if (sessionId !== currentSpeechSessionId) {
+      return;
+    }
+
     if (res.ok && res.status === 200) {
       const data = await res.json();
+      if (sessionId !== currentSpeechSessionId) return;
+
       if (data && data.audio) {
         const mime = data.mimeType || 'audio/mpeg';
         const audioSrc = `data:${mime};base64,${data.audio}`;
         audioClipCache.set(cacheKey, audioSrc);
-        playAudioSource(audioSrc, onEnd);
+        playAudioSource(audioSrc, sessionId, onEnd);
         return;
       }
     }
@@ -328,26 +398,54 @@ export async function speakSpeech(
     // Graceful fallback to client SpeechSynthesis
   }
 
+  if (sessionId !== currentSpeechSessionId) return;
+
   // 4. Fallback to Web Speech API
   if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
     try {
-      const utterance = new SpeechSynthesisUtterance(clean);
-      utterance.lang = lang === 'vi' ? 'vi-VN' : 'en-US';
-      utterance.rate = 0.88;
-      utterance.pitch = 1.12;
+      safeSpeechTimeout(() => {
+        if (sessionId !== currentSpeechSessionId) return;
 
-      const voice = findVoice(lang === 'vi' ? 'vi' : 'en');
-      if (voice) utterance.voice = voice;
+        const utterance = new SpeechSynthesisUtterance(clean);
+        utterance.lang = lang === 'vi' ? 'vi-VN' : 'en-US';
+        utterance.rate = 0.88;
+        utterance.pitch = 1.12;
 
-      utterance.onend = () => onEnd?.();
-      utterance.onerror = () => onEnd?.();
-      window.speechSynthesis.speak(utterance);
+        const voice = findVoice(lang === 'vi' ? 'vi' : 'en');
+        if (voice) utterance.voice = voice;
+
+        utterance.onend = () => {
+          if (sessionId === currentSpeechSessionId) {
+            onEnd?.();
+          }
+        };
+
+        utterance.onerror = (e) => {
+          // If canceled or interrupted by next answer selection, do NOT trigger onEnd
+          if (e.error === 'interrupted' || e.error === 'canceled') {
+            return;
+          }
+          if (sessionId === currentSpeechSessionId) {
+            onEnd?.();
+          }
+        };
+
+        if (window.speechSynthesis.paused) {
+          window.speechSynthesis.resume();
+        }
+
+        window.speechSynthesis.speak(utterance);
+      }, 25, sessionId);
       return;
     } catch {
-      onEnd?.();
+      if (sessionId === currentSpeechSessionId) {
+        onEnd?.();
+      }
     }
   } else {
-    onEnd?.();
+    if (sessionId === currentSpeechSessionId) {
+      onEnd?.();
+    }
   }
 }
 
@@ -368,23 +466,32 @@ export function speakFindPrompt(params: {
   onEnd?: () => void;
 }) {
   stopSpeaking();
+  const sessionId = currentSpeechSessionId;
   const { nameVi, nameEn, mode, onEnd } = params;
 
   if (mode === 'vi') {
     // Chỉ đọc câu hỏi tiếng Việt
-    speakSpeech(`Bé hãy tìm: ${nameVi}!`, 'vi', onEnd);
+    speakSpeech(`Bé hãy tìm: ${nameVi}!`, 'vi', () => {
+      if (sessionId === currentSpeechSessionId) onEnd?.();
+    }, sessionId);
   } else if (mode === 'en') {
     // CHỈ phát âm từ khóa đáp án bằng tiếng Anh (không đọc câu hỏi tiếng Anh)
-    speakSpeech(nameEn, 'en', onEnd);
+    speakSpeech(nameEn, 'en', () => {
+      if (sessionId === currentSpeechSessionId) onEnd?.();
+    }, sessionId);
   } else {
     // Chế độ Song Ngữ:
     // 1. Đọc câu hỏi tiếng Việt: "Bé hãy tìm: Con Mèo!"
     // 2. Sau đó CHỈ đọc từ khóa tiếng Anh: "Cat!" (Không đọc "Find the Cat")
     speakSpeech(`Bé hãy tìm: ${nameVi}!`, 'vi', () => {
-      setTimeout(() => {
-        speakSpeech(nameEn, 'en', onEnd);
-      }, 350);
-    });
+      if (sessionId !== currentSpeechSessionId) return;
+      safeSpeechTimeout(() => {
+        if (sessionId !== currentSpeechSessionId) return;
+        speakSpeech(nameEn, 'en', () => {
+          if (sessionId === currentSpeechSessionId) onEnd?.();
+        }, sessionId);
+      }, 350, sessionId);
+    }, sessionId);
   }
 }
 
@@ -400,17 +507,27 @@ export function pronounceItem(
   onEnd?: () => void
 ) {
   stopSpeaking();
+  const sessionId = currentSpeechSessionId;
+
   if (mode === 'vi') {
-    speakSpeech(nameVi, 'vi', onEnd);
+    speakSpeech(nameVi, 'vi', () => {
+      if (sessionId === currentSpeechSessionId) onEnd?.();
+    }, sessionId);
   } else if (mode === 'en') {
-    speakSpeech(nameEn, 'en', onEnd);
+    speakSpeech(nameEn, 'en', () => {
+      if (sessionId === currentSpeechSessionId) onEnd?.();
+    }, sessionId);
   } else {
     // Both: Vietnamese name, then English keyword
     speakSpeech(nameVi, 'vi', () => {
-      setTimeout(() => {
-        speakSpeech(nameEn, 'en', onEnd);
-      }, 300);
-    });
+      if (sessionId !== currentSpeechSessionId) return;
+      safeSpeechTimeout(() => {
+        if (sessionId !== currentSpeechSessionId) return;
+        speakSpeech(nameEn, 'en', () => {
+          if (sessionId === currentSpeechSessionId) onEnd?.();
+        }, sessionId);
+      }, 300, sessionId);
+    }, sessionId);
   }
 }
 
@@ -434,20 +551,29 @@ export function speakPraise(
   onEnd?: () => void
 ) {
   stopSpeaking();
+  const sessionId = currentSpeechSessionId;
   const randomVi = PRAISE_PHRASES_VI[Math.floor(Math.random() * PRAISE_PHRASES_VI.length)];
 
   if (mode === 'vi') {
-    speakSpeech(`${randomVi} ${nameVi}!`, 'vi', onEnd);
+    speakSpeech(`${randomVi} ${nameVi}!`, 'vi', () => {
+      if (sessionId === currentSpeechSessionId) onEnd?.();
+    }, sessionId);
   } else if (mode === 'en') {
-    speakSpeech(`Good job! ${nameEn}!`, 'en', onEnd);
+    speakSpeech(`Good job! ${nameEn}!`, 'en', () => {
+      if (sessionId === currentSpeechSessionId) onEnd?.();
+    }, sessionId);
   } else {
     // Song ngữ: Đọc tiếng Việt đầy đủ lời khen + tên tiếng Việt, rồi phát âm từ khóa tiếng Anh
     // Ví dụ: "Hoan hô bé! Đúng rồi! Con Mèo!" ... "Cat!"
     speakSpeech(`${randomVi} ${nameVi}!`, 'vi', () => {
-      setTimeout(() => {
-        speakSpeech(nameEn, 'en', onEnd);
-      }, 250);
-    });
+      if (sessionId !== currentSpeechSessionId) return;
+      safeSpeechTimeout(() => {
+        if (sessionId !== currentSpeechSessionId) return;
+        speakSpeech(nameEn, 'en', () => {
+          if (sessionId === currentSpeechSessionId) onEnd?.();
+        }, sessionId);
+      }, 300, sessionId);
+    }, sessionId);
   }
 }
 
@@ -459,11 +585,16 @@ const TRY_AGAIN_PHRASES_VI = [
 
 export function speakEncouragement(mode: AudioLanguageMode, onEnd?: () => void) {
   stopSpeaking();
+  const sessionId = currentSpeechSessionId;
   const randomVi = TRY_AGAIN_PHRASES_VI[Math.floor(Math.random() * TRY_AGAIN_PHRASES_VI.length)];
 
   if (mode === 'en') {
-    speakSpeech('Try again!', 'en', onEnd);
+    speakSpeech('Try again!', 'en', () => {
+      if (sessionId === currentSpeechSessionId) onEnd?.();
+    }, sessionId);
   } else {
-    speakSpeech(randomVi, 'vi', onEnd);
+    speakSpeech(randomVi, 'vi', () => {
+      if (sessionId === currentSpeechSessionId) onEnd?.();
+    }, sessionId);
   }
 }

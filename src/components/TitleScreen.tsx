@@ -8,7 +8,7 @@ import {
   UserProgress
 } from '../types.ts';
 import { SoundFX, speakFindPrompt } from '../utils/audio.ts';
-import { Volume2, Star, Sparkles, Award, ShieldCheck, Heart, RefreshCw } from 'lucide-react';
+import { Volume2, Star, Sparkles, Award, ShieldCheck, Heart, RefreshCw, Smartphone } from 'lucide-react';
 
 interface TitleScreenProps {
   categories: CategoryInfo[];
@@ -22,6 +22,7 @@ interface TitleScreenProps {
   onOpenStickerAlbum: () => void;
   onOpenSafetyInfo: () => void;
   onOpenAudioSettings: () => void;
+  onOpenInstallApp?: () => void;
   progress: UserProgress;
   recommendation: SmartRecommendation;
 }
@@ -38,6 +39,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
   onOpenStickerAlbum,
   onOpenSafetyInfo,
   onOpenAudioSettings,
+  onOpenInstallApp,
   progress,
   recommendation
 }) => {
@@ -59,15 +61,33 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
 
       {/* Top Header Bar */}
       <header className="relative z-10 max-w-4xl w-full mx-auto flex items-center justify-between gap-2">
-        {/* Safe for Kids Badge */}
-        <button
-          onClick={onOpenSafetyInfo}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-white/90 hover:bg-white text-emerald-700 text-xs sm:text-sm font-bold rounded-full shadow-sm border border-emerald-200 transition active:scale-95 cursor-pointer"
-          aria-label="Thông tin an toàn cho bé"
-        >
-          <ShieldCheck className="w-4 h-4 text-emerald-600" />
-          <span>100% Không quảng cáo</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Safe for Kids Badge */}
+          <button
+            onClick={onOpenSafetyInfo}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white/90 hover:bg-white text-emerald-700 text-xs sm:text-sm font-bold rounded-full shadow-sm border border-emerald-200 transition active:scale-95 cursor-pointer"
+            aria-label="Thông tin an toàn cho bé"
+          >
+            <ShieldCheck className="w-4 h-4 text-emerald-600" />
+            <span className="hidden sm:inline">100% Không quảng cáo</span>
+            <span className="sm:hidden">An toàn</span>
+          </button>
+
+          {/* Install to Phone / APK button */}
+          {onOpenInstallApp && (
+            <button
+              onClick={() => {
+                SoundFX.playPop();
+                onOpenInstallApp();
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-extrabold rounded-full shadow-sm border border-emerald-700 transition active:scale-95 cursor-pointer"
+              aria-label="Cài đặt lên điện thoại hoặc tạo file APK"
+            >
+              <Smartphone className="w-4 h-4" />
+              <span>Cài ĐT / Tải APK</span>
+            </button>
+          )}
+        </div>
 
         {/* User Progress Badges */}
         <div className="flex items-center gap-2">

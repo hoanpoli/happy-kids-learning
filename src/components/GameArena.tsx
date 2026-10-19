@@ -89,6 +89,11 @@ export const GameArena: React.FC<GameArenaProps> = ({
 
   const handleCardClick = (item: GameItem) => {
     if (isAnsweredCorrectly) return;
+
+    // Immediately cancel and stop reading the question prompt
+    stopSpeaking();
+    setIsSpeakingPrompt(false);
+
     if (wrongOptionIds.includes(item.id)) {
       // Re-pronounce card clicked
       pronounceItem(item.nameVi, item.nameEn, languageMode);
