@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38BDF8" />
+      <stop offset="50%" stop-color="#FCD34D" />
+      <stop offset="100%" stop-color="#34D399" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+  
+  <!-- App Icon Base Background -->
+  <rect width="512" height="512" rx="128" fill="url(#bg)"/>
+  
+  <!-- Inner White Card -->
+  <rect x="56" y="56" width="400" height="400" rx="96" fill="#FFFFFF" filter="url(#shadow)"/>
+  
+  <!-- Cute Panda Center Mascot -->
+  <g transform="translate(146, 120)">
+    <!-- Ears -->
+    <circle cx="50" cy="50" r="32" fill="#1E293B"/>
+    <circle cx="170" cy="50" r="32" fill="#1E293B"/>
+    <!-- Head -->
+    <circle cx="110" cy="130" r="90" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="6"/>
+    <!-- Eye Patches -->
+    <ellipse cx="75" cy="115" rx="22" ry="30" fill="#1E293B" transform="rotate(-15 75 115)"/>
+    <circle cx="75" cy="112" r="8" fill="#FFFFFF"/>
+    <ellipse cx="145" cy="115" rx="22" ry="30" fill="#1E293B" transform="rotate(15 145 115)"/>
+    <circle cx="145" cy="112" r="8" fill="#FFFFFF"/>
+    <!-- Cute Cheeks -->
+    <circle cx="55" cy="150" r="14" fill="#FDA4AF" opacity="0.7"/>
+    <circle cx="165" cy="150" r="14" fill="#FDA4AF" opacity="0.7"/>
+    <!-- Nose & Smile -->
+    <ellipse cx="110" cy="148" rx="14" ry="10" fill="#1E293B"/>
+    <path d="M96 165 Q110 178 124 165" stroke="#1E293B" stroke-width="6" stroke-linecap="round" fill="none"/>
+  </g>
+  
+  <!-- Twinkling Stars -->
+  <polygon points="90,120 96,134 110,136 100,146 102,160 90,152 78,160 80,146 70,136 84,134" fill="#F59E0B"/>
+  <polygon points="420,130 425,142 438,144 429,152 431,165 420,158 409,165 411,152 402,144 415,142" fill="#F59E0B"/>
+
+  <!-- Bilingual text banner -->
+  <rect x="96" y="380" width="320" height="52" rx="26" fill="#F59E0B"/>
+  <text x="256" y="415" font-family="'Quicksand', 'Nunito', sans-serif" font-size="28" font-weight="900" fill="#FFFFFF" text-anchor="middle">BÉ VUI HỌC</text>
+</svg>

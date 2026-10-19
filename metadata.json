@@ -1,0 +1,8 @@
+{
+  "name": "Bé Vui Học - Đoán Hình Song Ngữ Cho Bé 3 Tuổi",
+  "description": "Trò chơi tương tác lựa chọn hình ảnh với giọng đọc tiếng Việt và tiếng Anh chuẩn cho bé 3 tuổi. Đa dạng chủ đề, cấp độ khó tăng dần, tự động gợi ý ôn tập và 100% không quảng cáo.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
