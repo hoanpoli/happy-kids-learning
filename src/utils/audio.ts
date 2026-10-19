@@ -232,6 +232,7 @@ function findVoice(langPrefix: string): SpeechSynthesisVoice | null {
 
 // Active speech session tracker & timeout management
 let currentSpeechSessionId = 0;
+let serverTTSAvailable: boolean | null = null;
 const activeSpeechTimeouts = new Set<ReturnType<typeof setTimeout>>();
 
 function clearAllSpeechTimeouts() {
@@ -365,37 +366,44 @@ export async function speakSpeech(
     return;
   }
 
-  // 3. Request high quality TTS from backend
-  try {
-    const res = await fetch('/api/tts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        text: clean,
-        lang,
-        voice: lang === 'vi' ? 'Kore' : 'Puck'
-      })
-    });
+  // 3. Request high quality TTS from backend (if available)
+  if (serverTTSAvailable !== false) {
+    try {
+      const res = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: clean,
+          lang,
+          voice: lang === 'vi' ? 'Kore' : 'Puck'
+        })
+      });
 
-    // Check if another speech request cancelled this in-flight request
-    if (sessionId !== currentSpeechSessionId) {
-      return;
-    }
-
-    if (res.ok && res.status === 200) {
-      const data = await res.json();
-      if (sessionId !== currentSpeechSessionId) return;
-
-      if (data && data.audio) {
-        const mime = data.mimeType || 'audio/mpeg';
-        const audioSrc = `data:${mime};base64,${data.audio}`;
-        audioClipCache.set(cacheKey, audioSrc);
-        playAudioSource(audioSrc, sessionId, onEnd);
+      // Check if another speech request cancelled this in-flight request
+      if (sessionId !== currentSpeechSessionId) {
         return;
       }
+
+      if (res.ok && res.status === 200) {
+        serverTTSAvailable = true;
+        const data = await res.json();
+        if (sessionId !== currentSpeechSessionId) return;
+
+        if (data && data.audio) {
+          const mime = data.mimeType || 'audio/mpeg';
+          const audioSrc = `data:${mime};base64,${data.audio}`;
+          audioClipCache.set(cacheKey, audioSrc);
+          playAudioSource(audioSrc, sessionId, onEnd);
+          return;
+        }
+      } else if (res.status === 404) {
+        // Backend TTS route not deployed in this environment (e.g. static host without serverless)
+        serverTTSAvailable = false;
+      }
+    } catch {
+      // Graceful fallback to client SpeechSynthesis
+      serverTTSAvailable = false;
     }
-  } catch {
-    // Graceful fallback to client SpeechSynthesis
   }
 
   if (sessionId !== currentSpeechSessionId) return;
@@ -403,39 +411,35 @@ export async function speakSpeech(
   // 4. Fallback to Web Speech API
   if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
     try {
-      safeSpeechTimeout(() => {
-        if (sessionId !== currentSpeechSessionId) return;
+      const utterance = new SpeechSynthesisUtterance(clean);
+      utterance.lang = lang === 'vi' ? 'vi-VN' : 'en-US';
+      utterance.rate = 0.9;
+      utterance.pitch = 1.1;
 
-        const utterance = new SpeechSynthesisUtterance(clean);
-        utterance.lang = lang === 'vi' ? 'vi-VN' : 'en-US';
-        utterance.rate = 0.88;
-        utterance.pitch = 1.12;
+      const voice = findVoice(lang === 'vi' ? 'vi' : 'en');
+      if (voice) utterance.voice = voice;
 
-        const voice = findVoice(lang === 'vi' ? 'vi' : 'en');
-        if (voice) utterance.voice = voice;
-
-        utterance.onend = () => {
-          if (sessionId === currentSpeechSessionId) {
-            onEnd?.();
-          }
-        };
-
-        utterance.onerror = (e) => {
-          // If canceled or interrupted by next answer selection, do NOT trigger onEnd
-          if (e.error === 'interrupted' || e.error === 'canceled') {
-            return;
-          }
-          if (sessionId === currentSpeechSessionId) {
-            onEnd?.();
-          }
-        };
-
-        if (window.speechSynthesis.paused) {
-          window.speechSynthesis.resume();
+      utterance.onend = () => {
+        if (sessionId === currentSpeechSessionId) {
+          onEnd?.();
         }
+      };
 
-        window.speechSynthesis.speak(utterance);
-      }, 25, sessionId);
+      utterance.onerror = (e) => {
+        // If canceled or interrupted by next answer selection, do NOT trigger onEnd
+        if (e.error === 'interrupted' || e.error === 'canceled') {
+          return;
+        }
+        if (sessionId === currentSpeechSessionId) {
+          onEnd?.();
+        }
+      };
+
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      }
+
+      window.speechSynthesis.speak(utterance);
       return;
     } catch {
       if (sessionId === currentSpeechSessionId) {
